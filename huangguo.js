@@ -91,41 +91,31 @@ function hgHmacHex(keyStr, msgStr) {
   return hex;
 }
 
-function reqJson(url, method, body) {
-  const u = String(url || '');
-  const signed = u.indexOf(API) === 0;
-  const pathWithQuery = signed ? u.slice(API.length) : '';
-  const shifts = signed ? [0, -1, 1] : [0];
-  for (let i = 0; i < shifts.length; i++) {
-    const headers = {
-      'User-Agent': UA,
-      'Accept': 'application/json, text/plain, */*',
-      'Referer': SITE + '/'
-    };
-    if (signed) {
-      const win = Math.floor(Date.now() / 1000 / 300) + shifts[i];
-      headers['Origin'] = HG_ORIGIN;
-      headers['Referer'] = HG_REFERER;
-      headers['X-HG-Ts'] = String(win * 300);
-      headers['X-HG-Sig'] = hgHmacHex(HG_SECRET, win + '\n' + pathWithQuery);
+function reqJson(url) {
+  const path = url.startsWith(API) ? url.slice(API.length) : '';
+  const win = Math.floor(Date.now() / 1000 / 300);
+  const sig = hgHmacHex(HG_SECRET, win + '\n' + path);
+
+  const headers = {
+    'User-Agent': UA,
+    'Accept': 'application/json, text/plain, */*',
+    'Origin': HG_ORIGIN,
+    'Referer': HG_REFERER,
+    'X-HG-Ts': String(win * 300),
+    'X-HG-Sig': sig
+  };
+
+  try {
+    // 尝试多种写法，提高兼容性
+    let r = req(url, { headers: headers, timeout: 20000, method: 'GET' });
+    if (!r || r.code !== 200) {
+      // 备用写法
+      r = req(url, headers);
     }
-    try {
-      const opts = { method: method || 'get', headers: headers, timeout: 15000 };
-      if (body !== undefined && body !== null) {
-        const payload = (typeof body === 'string') ? body : JSON.stringify(body);
-        opts.headers['Content-Type'] = 'application/json';
-        opts.body = payload;
-        opts.data = payload;
-      }
-      const r = req(u, opts);
-      if (!r || !r.content) continue;
-      const code = Number(r.code);
-      if (code === 200) {
-        try { return JSON.parse(String(r.content)); } catch (e) { return null; }
-      }
-      if (!signed || (code !== 403 && code !== 401)) return null;
-    } catch (e) {}
-  }
+    if (r && r.code === 200 && r.content) {
+      return JSON.parse(r.content);
+    }
+  } catch (e) {}
   return null;
 }
 
